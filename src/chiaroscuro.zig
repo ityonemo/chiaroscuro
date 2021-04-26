@@ -1,26 +1,29 @@
 const std = @import("std");
+const Module = @import("module.zig").Module;
+const js = @import("extern.zig").js;
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
-extern fn jsConsoleLogStr(?[*]const u8, u32) void;
-extern fn jsConsoleLogInt(u32) void;
-
 fn print(string: []const u8) void {
-    jsConsoleLogStr(string.ptr, string.len);
+    js.consoleLogStr(string.ptr, string.len);
 }
 
-export fn allocate(size: u32) u32 {
+export fn allocate(size: usize) usize {
     var slab = gpa.allocator.alloc(u8, size) catch unreachable;
     return @ptrToInt(slab.ptr);
 }
 
-export fn instantiate(ptr: u32, size: u32) void {
+export fn instantiate(ptr: usize, size: usize) void {
     var raw_module = @intToPtr([*]u8, size);
     var module = raw_module[0..size];
     // actual processing to go here.
     // this isn't complete yet.
-    jsConsoleLogInt(module[0]);
-    jsConsoleLogInt(module[1]);
-    jsConsoleLogInt(module[2]);
-    jsConsoleLogInt(module[3]);
+    js.consoleLogInt(module[0]);
+    js.consoleLogInt(module[1]);
+    js.consoleLogInt(module[2]);
+    js.consoleLogInt(module[3]);
+}
+
+test "children" {
+    @import("std").testing.refAllDecls(@This());
 }
