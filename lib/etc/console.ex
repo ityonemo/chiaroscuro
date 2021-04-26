@@ -2,6 +2,6 @@ defmodule :console do
   def log(content) do
     content
     |> inspect
-    |> IO.puts
+    |> IO.puts()
   end
 end
