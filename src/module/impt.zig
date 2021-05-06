@@ -33,21 +33,19 @@ pub const ImptTable = struct {
     };
 
     /// creates an ImptTable by parsing a slice that begins with a binary
-    /// chunk that fits the atom table format.
+    /// chunk that fits the import table format.
     pub fn parse(allocator: *mem.Allocator, source_ptr: *[]const u8) !ImptTable {
         var source = source_ptr.*; // convenience definition
+        // SANITY CHECKS
+        debug.assert((source.len & 0x3) == 0);
+        debug.assert(mem.eql(u8, source[0..4], "ImpT"));
+        // SANITY CHECKS
+
         // source must be at least 12 bytes to accomodate full header
         if (source.len <= 12) return ModuleError.TOO_SHORT;
 
-        // TODO: does this no-op in release-fast?
-        // double checks that we are in an atom module.
-        debug.assert(mem.eql(u8, source[0..4], "ImpT"));
-
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
-
-        debug.warn("chunk_length: {}\n", .{chunk_length});
-        debug.warn("source_length: {}\n", .{source.len});
 
         // verify that this our source is long enough and is aligned well
         if (chunk_length > source.len) return ModuleError.TOO_SHORT;
@@ -55,7 +53,7 @@ pub const ImptTable = struct {
 
         defer source_ptr.* = source[chunk_length..];
 
-        // next 4-byte segment is the "total number of atoms"
+        // next 4-byte segment is the "total number of imports"
         var expt_count: usize = Module.little_bytes_to_usize(source[8..12]);
         if (chunk_length != (expt_count + 1) * 12) return ModuleError.MISMATCHED_SIZE;
 
@@ -108,10 +106,10 @@ const test_allocator = @import("std").testing.allocator;
 const assert = @import("std").debug.assert;
 var runtime_zero: usize = 0;
 
-test "export parser works on a export binary" {
-    const foo_atom = [_]u8{ 0, 0, 0, 47, 0, 0, 0, 47, 0, 0, 0, 47 };
+test "import parser works on a import binary" {
+    const foo_impt = [_]u8{ 0, 0, 0, 47, 0, 0, 0, 47, 0, 0, 0, 47 };
     var dest: ?ImptTable.Impt = undefined;
-    var source = foo_atom[runtime_zero..];
+    var source = foo_impt[runtime_zero..];
 
     try ImptTable.Impt.parse(test_allocator, &dest, &source);
 
@@ -123,8 +121,8 @@ test "export parser works on a export binary" {
     assert(dest.?.arity == 47);
 }
 
-test "export parser can be attached to a for loop for more than one export" {
-    const test_atoms = [_]u8{
+test "import parser can be attached to a for loop for more than one import" {
+    const test_impts = [_]u8{
         0, 0, 0, 7,  0, 0, 0, 8,  0, 0, 0, 9,
         0, 0, 0, 10, 0, 0, 0, 11, 0, 0, 0, 12,
     };
@@ -132,7 +130,7 @@ test "export parser can be attached to a for loop for more than one export" {
     var dest = try ImptTable.build_entries(test_allocator, 2);
     defer ImptTable.clear_entries(test_allocator, dest);
 
-    var source = test_atoms[runtime_zero..];
+    var source = test_impts[runtime_zero..];
     try ImptTable.parser_loop(test_allocator, dest, &source);
 
     assert(source.len == 0);
@@ -173,11 +171,11 @@ test "impt parser loop raises if the data are too short on a second go" {
 // //////////////////////////////////////////////////////////////////////
 // TABLE TESTS
 
-test "table parser works on one atom value" {
+test "table parser works on one impt value" {
     const table = [_]u8{
-        'I', 'm', 'p', 'T', // export table
+        'I', 'm', 'p', 'T', // import table
         0, 0, 0, 24, // length of this table
-        0, 0, 0, 1, // number of exports
+        0, 0, 0, 1, // number of imports
         0, 0, 0, 7,
         0, 0, 0, 8,
         0, 0, 0, 9,
@@ -235,7 +233,7 @@ test "table parser works on more than one impt value" {
 test "incomplete header fails" {
     const table = [_]u8{
         'I', 'm', 'p', 'T',
-        0,   0,   0,
+        0,   0,   0,  0,
     }; // incomplete header
 
     var slice = table[runtime_zero..];
@@ -277,30 +275,11 @@ test "incomplete table fails" {
     };
 }
 
-test "table fails on odd value/length combo" {
-    const table = [_]u8{
-        'I', 'm', 'p', 'T',
-        0, 0, 0, 25, // misaligned value
-        0, 0, 0, 2, // number of exports
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        0,
-    };
-
-    var slice = table[runtime_zero..];
-
-    _ = ImptTable.parse(test_allocator, &slice) catch |err| switch (err) {
-        ModuleError.BAD_ALIGN => return,
-        else => unreachable,
-    };
-}
-
 test "table fails on incorrect value/length combo" {
     const table = [_]u8{
         'I', 'm', 'p', 'T',
         0, 0, 0, 24, // funny length for 2
-        0, 0, 0, 2, // number of exports
+        0, 0, 0, 2, // number of imports
         0, 0, 0, 0,
         0, 0, 0, 0,
         0, 0, 0, 0,
@@ -338,8 +317,8 @@ test "module can parse import table" {
     var module = try Module.from_slice(test_allocator, module_slice);
     defer Module.destroy(&module);
 
-    var exports = module.impttable.?.entries;
-    assert(exports.len == 2);
+    var imports = module.impttable.?.entries;
+    assert(imports.len == 2);
 
     assert(module.impttable.?.entries[0].?.module == 7);
     assert(module.impttable.?.entries[0].?.function == 7);

@@ -49,13 +49,13 @@ pub const CodeTable = struct {
     /// chunk that fits the atom table format.
     pub fn parse(allocator: *mem.Allocator, source_ptr: *[]const u8) !CodeTable {
         var source = source_ptr.*; // convenience definition
+        // SANITY CHECKS
+        debug.assert((source.len & 0x3) == 0);
+        debug.assert(mem.eql(u8, source[0..4], "Code"));
+        // SANITY CHECKS
+
         // source must be at least 12 bytes to accomodate full header
         if (source.len <= 12) return ModuleError.TOO_SHORT;
-
-        // TODO: does this no-op in release-fast?
-        // double checks that we are in an atom module.
-        debug.assert(mem.eql(u8, source[0..4], "Code"));
-
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
 
@@ -261,22 +261,6 @@ test "expt parser raises if the data are too short" {
 //
 //    _ = CodeTable.parse(test_allocator, &slice) catch | err | switch (err) {
 //        ModuleError.TOO_SHORT => return,
-//        else => unreachable,
-//    };
-//}
-//
-//test "table fails on odd value/length combo" {
-//    const table = [_]u8{'E', 'x', 'p', 'T',
-//                         0, 0, 0, 25,       // misaligned value
-//                         0, 0, 0, 2,        // number of exports
-//                         0, 0, 0, 0,
-//                         0, 0, 0, 0,
-//                         0, 0, 0, 0, 0};
-//
-//    var slice = table[runtime_zero..];
-//
-//    _ = CodeTable.parse(test_allocator, &slice) catch | err | switch (err) {
-//        ModuleError.BAD_ALIGN => return,
 //        else => unreachable,
 //    };
 //}

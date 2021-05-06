@@ -57,8 +57,6 @@ pub const Module = struct {
     }
 
     fn parse_slice(module: *Module, slice: *[]const u8) !void {
-        debug.print("slice length: {}\n", .{slice.len});
-
         switch (@intToEnum(chunk_t, mem.bytesToValue(u32, slice.*[0..4]))) {
             .ATOM => module.atomtable = try AtomTable.parse(module.allocator, slice),
             .EXPT => module.expttable = try ExptTable.parse(module.allocator, slice),
