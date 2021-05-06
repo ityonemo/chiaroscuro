@@ -26,5 +26,8 @@ chiaroscuro-*.tar
 # Temporary files for e.g. tests
 /tmp
 
-/*/zig-cache/
+/src/zig-cache/
+/src/module/zig-cache/
+/test/zig/zig-cache/
+/zig-cache/
 /priv/wasm/

@@ -1,5 +1,6 @@
 const debug = @import("std").debug;
 const mem = @import("std").mem;
+const testing = @import("std").testing;
 
 const Module = @import("../module.zig").Module;
 const ModuleError = @import("../module.zig").ModuleError;
@@ -33,6 +34,8 @@ pub const AtomTable = struct {
         var source = source_ptr.*; // convenience definition
         // source must be at least 12 bytes to accomodate full header
         if (source.len <= 12) return ModuleError.TOO_SHORT;
+        // in theory this should never happen.
+        if ((source.len & 0x3) != 0) return ModuleError.BAD_ALIGN;
 
         // TODO: does this no-op in release-fast?
         // double checks that we are in an atom module.
@@ -40,10 +43,11 @@ pub const AtomTable = struct {
 
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
+        // pad the chunk_length if necessary.
+        if ((chunk_length & 0x3) != 0) { chunk_length += 4 - (chunk_length & 0x3); }
 
         // verify that this our source is long enough and is aligned well
         if (chunk_length > source.len) return ModuleError.TOO_SHORT;
-        if ((chunk_length & 0x3) != 0) return ModuleError.BAD_ALIGN;
         defer source_ptr.* = source[chunk_length..];
 
         // next 4-byte segment is the "total number of atoms"
@@ -112,8 +116,8 @@ test "atom parser works on a single atom" {
     defer test_allocator.free(dest.?);
 
     // check that the parser has moved the source slice to the end.
-    assert(source.len == 0);
-    assert(mem.eql(u8, dest.?, "foo"));
+    testing.expectEqual(source.len, 0);
+    testing.expectEqualStrings(dest.?, "foo");
 }
 
 test "atom parser can be attached to a for loop for more than one atom" {
@@ -124,8 +128,8 @@ test "atom parser can be attached to a for loop for more than one atom" {
     var source = test_atoms[runtime_zero..];
     try AtomTable.parser_loop(test_allocator, dest, &source);
 
-    assert(mem.eql(u8, dest[0].?, "foo"));
-    assert(mem.eql(u8, dest[1].?, "barquux"));
+    testing.expectEqualStrings(dest[0].?, "foo");
+    testing.expectEqualStrings(dest[1].?, "barquux");
 }
 
 // FAILURE PATHS
@@ -192,17 +196,40 @@ test "table parser works on one atom value" {
     defer AtomTable.destroy(&atomtable);
 
     // check that atomtable has the the meats.
-    assert(atomtable.entries.len == 1);
-    assert(mem.eql(u8, atomtable.entries[0].?, "foo"));
+    testing.expectEqual(atomtable.entries.len, 1);
+    testing.expectEqualStrings(atomtable.entries[0].?, "foo");
 
     // check that the slice has been advanced.
-    assert(slice.len == 0);
+    testing.expectEqual(slice.len, 0);
 }
 
 test "table parser works on more than one atom value" {
     const table = [_]u8{
         'A', 't', 'U', '8', // utf-8 atoms
         0, 0, 0, 24, // length of this table
+        0,   0,   0,   2, // number of atoms
+        3,   'f', 'o', 'o',
+        7,   'b', 'a', 'r',
+        'b', 'a', 'z', 'z',
+    }; // atom len + string
+    var slice = table[runtime_zero..];
+
+    var atomtable = try AtomTable.parse(test_allocator, &slice);
+    defer AtomTable.destroy(&atomtable);
+
+    // check that atomtable has the the meats.
+    testing.expectEqual(atomtable.entries.len, 2);
+    testing.expectEqualStrings(atomtable.entries[0].?, "foo");
+    testing.expectEqualStrings(atomtable.entries[1].?, "barbazz");
+
+    // check that the slice has been advanced.
+    testing.expectEqual(slice.len, 0);
+}
+
+test "table parser is ok if the length needs padding" {
+    const table = [_]u8{
+        'A', 't', 'U', '8', // utf-8 atoms
+        0, 0, 0, 23, // length of this table
         0,   0,   0,   2, // number of atoms
         3,   'f', 'o', 'o',
         6,   'b', 'a', 'r',
@@ -214,12 +241,12 @@ test "table parser works on more than one atom value" {
     defer AtomTable.destroy(&atomtable);
 
     // check that atomtable has the the meats.
-    assert(atomtable.entries.len == 2);
-    assert(mem.eql(u8, atomtable.entries[0].?, "foo"));
-    assert(mem.eql(u8, atomtable.entries[1].?, "barbaz"));
+    testing.expectEqual(atomtable.entries.len, 2);
+    testing.expectEqualStrings(atomtable.entries[0].?, "foo");
+    testing.expectEqualStrings(atomtable.entries[1].?, "barbaz");
 
-    // check that the slice has been advanced.
-    assert(slice.len == 0);
+    // check that the slice has been advanced past the padding
+    testing.expectEqual(slice.len, 0);
 }
 
 // FAILURE PATHS
@@ -271,14 +298,13 @@ test "module can parse atom table" {
     };
 
     var module_slice = module_table[runtime_zero..];
-
     var module = try Module.from_slice(test_allocator, module_slice);
     defer Module.destroy(&module);
 
     var atoms = module.atomtable.?.entries;
-    assert(atoms.len == 2);
-    assert(mem.eql(u8, atoms[0].?, "foo"));
-    assert(mem.eql(u8, atoms[1].?, "barbaz"));
+    testing.expectEqual(atoms.len, 2);
+    testing.expectEqualStrings(atoms[0].?, "foo");
+    testing.expectEqualStrings(atoms[1].?, "barbaz");
 }
 
 test "module fails if the table is too short" {

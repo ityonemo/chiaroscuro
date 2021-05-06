@@ -8,7 +8,8 @@ defmodule Chiaroscuro.MixProject do
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: [format: ["format", &zig_format/1]]
+      aliases: [format: ["format", &zig_format/1]],
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
 
@@ -18,7 +19,14 @@ defmodule Chiaroscuro.MixProject do
     ]
   end
 
-  defp deps, do: []
+  defp deps,
+    do: [
+      # "~> 0.7", only: :test}
+      {:zigler, path: "../zigler", only: :test}
+    ]
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp zig_format(_) do
     files = get_recursive_files("src")

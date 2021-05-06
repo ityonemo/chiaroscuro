@@ -46,23 +46,40 @@ pub const Module = struct {
 
     pub fn from_slice(allocator: *mem.Allocator, data: []const u8) !Module {
         _ = try Form.validate(data);
-        var this_slice = data[12..];
+        var slice = data[12..];
         var module = Module{
             .allocator = allocator,
         };
-        //while (this_slice.len >= 0) {
-        try parse_slice(&module, &this_slice);
-        //}
+        while (slice.len > 0) {
+            try parse_slice(&module, &slice);
+        }
         return module;
     }
 
     fn parse_slice(module: *Module, slice: *[]const u8) !void {
+        debug.print("slice length: {}\n", .{slice.len});
+
         switch (@intToEnum(chunk_t, mem.bytesToValue(u32, slice.*[0..4]))) {
             .ATOM => module.atomtable = try AtomTable.parse(module.allocator, slice),
             .EXPT => module.expttable = try ExptTable.parse(module.allocator, slice),
             .IMPT => module.impttable = try ImptTable.parse(module.allocator, slice),
             .CODE => module.codetable = try CodeTable.parse(module.allocator, slice),
-            else => unreachable,
+            .STRT => {
+                debug.print("error: STRT unimplemented\n", .{});
+                unreachable;
+            },
+            .ATTR => {
+                debug.print("error: ATTR unimplemented\n", .{});
+                unreachable;
+            },
+            .CINF => {
+                debug.print("error: CINF unimplemented\n", .{});
+                unreachable;
+            },
+            .LOCT => {
+                debug.print("error: LOCT unimplemented\n", .{});
+                unreachable;
+            },
         }
     }
 
