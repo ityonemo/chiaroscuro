@@ -47,9 +47,8 @@ pub const Module = struct {
     pub fn from_slice(allocator: *mem.Allocator, data: []const u8) !Module {
         _ = try Form.validate(data);
         var slice = data[12..];
-        var module = Module{
-            .allocator = allocator,
-        };
+        var module = Module{.allocator = allocator};
+        defer module.destroy();
         while (slice.len > 0) {
             try parse_slice(&module, &slice);
         }

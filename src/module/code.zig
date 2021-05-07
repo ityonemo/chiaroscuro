@@ -6,155 +6,113 @@ const ModuleError = @import("../module.zig").ModuleError;
 
 pub const CodeTable = struct {
     // but this will only have one for the entire table.
-    const entries_t = []?Code;
-    entries: entries_t = undefined,
     allocator: *mem.Allocator,
-
-    const Code = struct {
-        instruction_set: u32,
-        max_opcode: u32,
-        labels: usize,
-        functions: usize,
-        code: []u8,
-
-        const subheader_params = 4;
-
-        fn parse(allocator: *mem.Allocator, entry_ptr: *?Code, slice_ptr: *[]const u8) !void {
-            var slice = slice_ptr.*;
-            if (slice.len < 4) return ModuleError.TOO_SHORT;
-
-            var sub_size = Module.little_bytes_to_usize(slice[0..4]) + 4;
-            var code_len = slice.len - sub_size;
-            // do we have enough for the subheader
-            if (slice.len < sub_size) return ModuleError.TOO_SHORT;
-
-            var code_seg = try allocator.alloc(u8, code_len);
-            mem.copy(u8, code_seg, slice[sub_size..]);
-
-            entry_ptr.* = Code{
-                .instruction_set = Module.little_bytes_to_u32(slice[4..8]),
-                .max_opcode = Module.little_bytes_to_u32(slice[8..12]),
-                .labels = Module.little_bytes_to_usize(slice[12..16]),
-                .functions = Module.little_bytes_to_usize(slice[16..20]),
-                .code = code_seg,
-            };
-
-            // advance the slice pointer.  For code chunks, this shoul be
-            // the entire slice.
-            slice_ptr.* = slice[(sub_size + code_len)..];
-        }
-    };
+    instruction_set: u32,
+    max_opcode: u32,
+    labels: usize,
+    functions: usize,
+    code: []u8,
 
     /// creates an CodeTable by parsing a slice that begins with a binary
     /// chunk that fits the atom table format.
-    pub fn parse(allocator: *mem.Allocator, source_ptr: *[]const u8) !CodeTable {
-        var source = source_ptr.*; // convenience definition
+    pub fn parse(allocator: *mem.Allocator, slice_ptr: *[]const u8) !CodeTable {
+        var slice = slice_ptr.*; // convenience definition
         // SANITY CHECKS
-        debug.assert((source.len & 0x3) == 0);
-        debug.assert(mem.eql(u8, source[0..4], "Code"));
+        debug.assert(mem.eql(u8, slice[0..4], "Code"));
         // SANITY CHECKS
 
-        // source must be at least 12 bytes to accomodate full header
-        if (source.len <= 12) return ModuleError.TOO_SHORT;
-        // first 4-byte segment is the "total chunk length"
-        var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
+        // slice must be at least 24 bytes to accomodate full header
+        if (slice.len <= 24) return ModuleError.TOO_SHORT;
+        // first 4-byte segment is the "total chunk length".
+        var chunk_length: usize = Module.little_bytes_to_usize(slice[4..8]);
+        var subheader_length = Module.little_bytes_to_usize(slice[8..12]);
 
-        // verify that this our source is long enough and is aligned well
-        if (chunk_length > source.len) return ModuleError.TOO_SHORT;
-        if ((chunk_length & 0x3) != 0) return ModuleError.BAD_ALIGN;
-        defer source_ptr.* = source[chunk_length..];
+        var instruction_set = Module.little_bytes_to_u32(slice[12..16]);
+        var max_opcode = Module.little_bytes_to_u32(slice[16..20]);
+        var labels = Module.little_bytes_to_usize(slice[20..24]);
+        var functions = Module.little_bytes_to_usize(slice[24..28]);
 
-        // next 4-byte segment is the "total number of atoms"
-        var atom_count: usize = Module.little_bytes_to_usize(source[8..12]);
+        debug.print("\n subheader: {}\n", .{subheader_length});
+        debug.print("\n isa: {}\n", .{instruction_set});
+        debug.print("\n max_opcode: {}\n", .{max_opcode});
+        debug.print("\n labels: {}\n", .{labels});
+        debug.print("\n functions: {}\n", .{functions});
+        
+        var code_start = 12 + subheader_length;
 
-        // build a basic entries table.
-        var entries = try build_entries(allocator, atom_count);
-        errdefer clear_entries(allocator, entries);
+        var code_len = chunk_length - subheader_length;
+        // do we have enough for the subheader
+        if (slice.len < code_start + code_len) return ModuleError.TOO_SHORT;
 
-        // run a parser over the entries.
-        // NB: this might fail on allocation, but that's okay, because
-        // we are already clearing all entries in the errdefer statement
-        // above.
-        var atom_source_ptr = source[12..];
-        try parser_loop(allocator, entries, &atom_source_ptr);
+        var code_seg = try allocator.alloc(u8, code_len);
+        mem.copy(u8, code_seg, slice[code_start..code_start + code_len]);
+
+        // now, print out every piece of the code segment
+        for (code_seg) | char | {
+            debug.print("{}\n", .{char});
+        }
+
+        // advance the cursor to past the chunk.
+        if (chunk_length & 0x03 != 00) { chunk_length += 4 - (chunk_length & 0x03); }
+        slice_ptr.* = slice[chunk_length..];
 
         return CodeTable{
-            .entries = entries,
+            .instruction_set = instruction_set,
+            .max_opcode = max_opcode,
+            .labels = labels,
+            .functions = functions,
+            .code = code_seg,
             .allocator = allocator,
         };
     }
 
-    /// destroys an CodeTable, cleaning up all dependent entries inside
-    /// the table itself.
-    pub fn destroy(self: *CodeTable) void {
-        clear_entries(self.allocator, self.entries);
-    }
-
-    fn build_entries(allocator: *mem.Allocator, count: usize) !entries_t {
-        var entries = try allocator.alloc(?Code, count);
-        // intialize the entries with null values.
-        for (entries) |*entry| {
-            entry.* = null;
-        }
-        return entries;
-    }
-
-    // safely clears entries that have been built, whether or not they
-    // contain null values.
-    fn clear_entries(allocator: *mem.Allocator, entries: entries_t) void {
-        allocator.free(entries[0].?.code);
-        allocator.free(entries);
-    }
-
-    fn parser_loop(allocator: *mem.Allocator, entries: entries_t, source: *[]const u8) !void {
-        for (entries) |*entry| {
-            try Code.parse(test_allocator, entry, source);
-        }
+    pub fn destroy(table: *CodeTable) void {
+        table.allocator.free(table.code);
     }
 };
 
 // //////////////////////////////////////////////////////////////////////////
 // TESTING
-const Testing = @import("std").testing;
-const test_allocator = Testing.allocator;
-const assert = @import("std").debug.assert;
-var runtime_zero: usize = 0;
-
-test "export parser works on a export binary" {
-    const foo_atom = [_]u8{
-        0, 0, 0, 16, // sub-size
-        0, 0, 0, 47, // instruction set
-        0, 0, 0, 47, // max opcode
-        0, 0, 0, 47, // labels
-        0,   0,   0,   47, // functions
-        'q', 'u', 'u', 'x',
-    };
-    var dest: ?CodeTable.Code = undefined;
-    var source = foo_atom[runtime_zero..];
-
-    try CodeTable.Code.parse(test_allocator, &dest, &source);
-
-    // check that the parser has moved the source slice to the end.
-    Testing.expectEqual(source.len, 0);
-    // check the parsed value
-
-    Testing.expectEqual(@intCast(u32, 47), dest.?.instruction_set);
-    Testing.expectEqual(@intCast(u32, 47), dest.?.max_opcode);
-    Testing.expectEqual(@intCast(usize, 47), dest.?.labels);
-    Testing.expectEqual(@intCast(usize, 47), dest.?.functions);
-    Testing.expectEqualSlices(u8, "quux", dest.?.code);
-
-    test_allocator.free(dest.?.code);
-}
+//const Testing = @import("std").testing;
+//const test_allocator = Testing.allocator;
+//const assert = @import("std").debug.assert;
+//var runtime_zero: usize = 0;
+//
+//test "export parser works on a export binary" {
+//    const foo_atom = [_]u8{
+//        0, 0, 0, 16, // sub-size
+//        0, 0, 0, 47, // instruction set
+//        0, 0, 0, 47, // max opcode
+//        0, 0, 0, 47, // labels
+//        0,   0,   0,   47, // functions
+//        'q', 'u', 'u', 'x',
+//    };
+//    var dest: ?CodeTable.Code = undefined;
+//    var source = foo_atom[runtime_zero..];
+//
+//    try CodeTable.Code.parse(test_allocator, &dest, &source);
+//
+//    // check that the parser has moved the source slice to the end.
+//    Testing.expectEqual(source.len, 0);
+//    // check the parsed value
+//
+//    Testing.expectEqual(@intCast(u32, 47), dest.?.instruction_set);
+//    Testing.expectEqual(@intCast(u32, 47), dest.?.max_opcode);
+//    Testing.expectEqual(@intCast(usize, 47), dest.?.labels);
+//    Testing.expectEqual(@intCast(usize, 47), dest.?.functions);
+//    Testing.expectEqualSlices(u8, "quux", dest.?.code);
+//
+//    test_allocator.free(dest.?.code);
+//}
 
 // FAILURE PATHS
-test "expt parser raises if the data are too short" {
-    const incomplete_expt = [_]u8{ 0, 0, 7 };
-    var dest: ?CodeTable.Code = undefined;
-    var source = incomplete_expt[runtime_zero..];
-
-    Testing.expectError(ModuleError.TOO_SHORT, CodeTable.Code.parse(test_allocator, &dest, &source));
-}
+//test "expt parser raises if the data are too short" {
+//    const incomplete_expt = [_]u8{ 0, 0, 7 };
+//    var dest: ?CodeTable.Code = undefined;
+//    var source = incomplete_expt[runtime_zero..];
+//
+//    Testing.expectError(ModuleError.TOO_SHORT, CodeTable.Code.parse(test_allocator, &dest, &source));
+//}
 
 //test "expt parser loop raises if the data are too short on a second go" {
 //    const incomplete_atoms = [_]u8{0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0};
