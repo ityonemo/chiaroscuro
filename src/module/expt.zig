@@ -334,8 +334,8 @@ test "module fails if the export table is too short" {
     const module_table = [_]u8{
         'F', 'O', 'R', '1', // HEADER
         0,   0,   0,   26,
-        'E', 'x', 'p', 'T',
         'B', 'E', 'A', 'M',
+        'E', 'x', 'p', 'T',
         0,   0,   0,   1,
         0,   0,   0,   24,
         0,   0,
