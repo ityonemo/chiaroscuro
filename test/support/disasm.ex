@@ -8,7 +8,7 @@ defmodule Disasm do
   @doc """
   disassembles a .beam file and outputs the code segment
   """
-  def bin(binary \\ []) do
+  def bin(binary, opts \\ []) do
     as_disasm = Keyword.get(opts, :as_disasm, true)
 
     parsed =
