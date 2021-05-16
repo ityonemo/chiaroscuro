@@ -29,15 +29,16 @@ defmodule Disasm do
   end
 
   @doc """
-  Performs a tail-call binary parse over IFF chunks in the BEAM file.
+  Performs a tail-call binary parse over IFF "chunks" in the BEAM file.
 
   The erlang BEAM file follows the "interchange file format" which is defined
   by EA (https://en.wikipedia.org/wiki/Interchange_File_Format).  Each chunk
-  has a 4-byte header followed by a 4-byte size field, followed by the contents
+  has a 4-byte header followed by a 4-byte size entry, followed by the contents
   of the chunk.
 
-  Note that overall the IFF is a 4-byte aligned standard, but the size field
-  does not have to be a multiple fo 4.
+  Note that overall the IFF is a 4-byte aligned standard, but the size entry
+  does not have to be a multiple fo 4.  Splitting into chunks must therefore
+  be aligned.
   """
   def parse_chunks(_, so_far \\ nil)
 
@@ -150,7 +151,7 @@ defmodule Disasm do
   http://beam-wisdoms.clau.se/en/latest/indepth-beam-file.html#atom-and-atu8-atoms-table
 
   The atoms table is 32-bit count field followed by a flat list of unterminated
-  strings.  Each string is prepended by a one-byte "size" byte, which specifies
+  strings.  Each string is preceded by a one-byte "size" byte, which specifies
   how many bytes are in the atom string representation.  Note that this means
   that atoms cannot back a string that is more than 255 bytes long, which is
   indeed a restriction in the beam VM.
