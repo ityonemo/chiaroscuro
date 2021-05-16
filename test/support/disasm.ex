@@ -1,9 +1,6 @@
 defmodule Disasm do
   defstruct ~w(attribs cinfo code literals atoms)a ++
-  [exports: [],
-   imports: [],
-   locals: [],
-   lambdas: []]
+              [exports: [], imports: [], locals: [], lambdas: []]
 
   @doc """
   disassembles a .beam file and outputs the code segment
@@ -212,12 +209,12 @@ defmodule Disasm do
   end
 
   def parse_functions(<<count::integer-size(32), exports::binary>>) do
-    {exports, ""} =
-      Enum.map_reduce(1..count, exports, fn
-        _, <<f::integer-size(32), a::integer-size(32), l::integer-size(32), rest::binary>> ->
-          {%Function{i0: f, i1: a, i2: l}, rest}
-      end)
-    exports
+    1..count
+    |> Enum.map_reduce(exports, fn
+      _, <<f::integer-size(32), a::integer-size(32), l::integer-size(32), rest::binary>> ->
+        {%Function{i0: f, i1: a, i2: l}, rest}
+    end)
+    |> elem(0)
   end
 
   #############################################################################
@@ -237,18 +234,18 @@ defmodule Disasm do
   ## Literals table
 
   @doc """
-  parses the literals table.  This is a zlib-compressed etf.
+  parses the literals table.  This is a zlib-compressed list of erlang terms;
+  with each term prepended by its size.
   """
   def parse_literals(<<_size::integer-size(32), zipped::binary>>) do
     <<count::integer-size(32), terms::binary>> = :zlib.uncompress(zipped)
 
-    {terms, _} =
-      Enum.map_reduce(1..count, terms, fn
-        _, <<size::integer-size(32), etf::binary-size(size), rest::binary>> ->
-          {:erlang.binary_to_term(etf), rest}
-      end)
-
-    terms
+    1..count
+    |> Enum.map_reduce(terms, fn
+      _, <<size::integer-size(32), etf::binary-size(size), rest::binary>> ->
+        {:erlang.binary_to_term(etf), rest}
+    end)
+    |> elem(0)
   end
 
   #############################################################################
@@ -278,17 +275,18 @@ defmodule Disasm do
   def parse_opcode(<<0>> <> _, so_far), do: Enum.reverse(so_far)
 
   def parse_opcode(<<opcode, rest::binary>>, so_far) do
-      case Map.fetch!(@opcodes, opcode) do
-        {:int_code_end, 0} ->
-          Enum.reverse(so_far)
-        {opcode, 0} ->
-          parse_opcode(rest, [opcode | so_far])
+    case Map.fetch!(@opcodes, opcode) do
+      {:int_code_end, 0} ->
+        Enum.reverse(so_far)
 
-        {opcode, arity} ->
-          {terms, rest} = parse_compact_terms(rest, arity, [])
-          op = List.to_tuple([opcode | Enum.reverse(terms)])
-          parse_opcode(rest, [op | so_far])
-      end
+      {opcode, 0} ->
+        parse_opcode(rest, [opcode | so_far])
+
+      {opcode, arity} ->
+        {terms, rest} = parse_compact_terms(rest, arity, [])
+        op = List.to_tuple([opcode | Enum.reverse(terms)])
+        parse_opcode(rest, [op | so_far])
+    end
   end
 
   defp parse_compact_terms(rest, arity, so_far)
@@ -375,10 +373,11 @@ defmodule Disasm do
   ## postprocessing.
 
   defp post_process(module = %__MODULE__{}, _opts) do
-    updated_module = %{module |
-      exports: Enum.map(module.exports, &Function.post_process(&1, module, :exports)),
-      imports: Enum.map(module.imports, &Function.post_process(&1, module, :imports)),
-      locals: Enum.map(module.locals, &Function.post_process(&1, module, :locals)),
+    updated_module = %{
+      module
+      | exports: Enum.map(module.exports, &Function.post_process(&1, module, :exports)),
+        imports: Enum.map(module.imports, &Function.post_process(&1, module, :imports)),
+        locals: Enum.map(module.locals, &Function.post_process(&1, module, :locals))
     }
 
     new_code = Enum.map(module.code, &reinterpret(&1, updated_module))
