@@ -52,7 +52,7 @@ defmodule Disasm do
   def parse_chunks(<<"AtU8", size::integer-size(32), rest!::binary>>, s) do
     Logger.debug("parsing AtU8")
     # skip the atoms table
-    aligned = align(size) |> IO.inspect(label: "56")
+    aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | atoms: parse_atoms(table)})
   end
@@ -308,8 +308,15 @@ defmodule Disasm do
     parse_opcode(rest, [])
   end
 
-  @opcodes __DIR__ |> Path.join("opcode_table.exs") |> Code.eval_file() |> elem(0)
+  # use typespecs to get the highest opcode number.
+  {:ok, specs} = Code.Typespec.fetch_specs(:beam_opcodes)
+  {{:opname, 1}, [{:type, _, :fun, [product, _]}]} = Enum.find(specs, &(elem(&1, 0) == {:opname, 1}))
+  {:type, _, :product, [range]} = product
+  {:type, _, :range, [_, {:integer, _, limit}]} = range
+  # assemble a dict of all beam opcodes, by number
+  @opcodes Map.new(1..limit, &{&1, :beam_opcodes.opname(&1)})
 
+  @spec parse_opcode(binary, any) :: list
   def parse_opcode(<<>>, so_far), do: Enum.reverse(so_far)
   def parse_opcode(<<0>> <> _, so_far), do: Enum.reverse(so_far)
 
@@ -449,6 +456,13 @@ defmodule Disasm do
   defp reinterpret({:call_ext_only, a, index}, module) do
     {m, f, ^a} = Enum.at(module.imports, index)
     {:call_ext_only, a, {:extfunc, m, f, a}}
+  end
+
+  defp reinterpret({:make_fun2, index}, module = %{atoms: [m | _]}) do
+    lambda = %{fun: fun, arity: a} = Enum.at(module.lambdas, index)
+    f = Enum.at(module.atoms, fun - 1)
+
+    {:make_fun2, {m, f, a}, a, lambda.ouniq, lambda.nfree}
   end
 
   defp reinterpret(list, module) when is_list(list) do
