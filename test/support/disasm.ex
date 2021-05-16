@@ -2,6 +2,8 @@ defmodule Disasm do
   defstruct ~w(attribs cinfo code literals atoms)a ++
               [exports: [], imports: [], locals: [], lambdas: []]
 
+  import Logger
+
   @doc """
   disassembles a .beam file and outputs the code segment
   """
@@ -48,67 +50,78 @@ defmodule Disasm do
   end
 
   def parse_chunks(<<"AtU8", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing AtU8")
     # skip the atoms table
-    aligned = align(size)
+    aligned = align(size) |> IO.inspect(label: "56")
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | atoms: parse_atoms(table)})
   end
 
   def parse_chunks(<<"Code", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Code")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | code: parse_code(table)})
   end
 
   def parse_chunks(<<"StrT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing StrT")
     aligned = align(size)
     <<_table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, s)
   end
 
   def parse_chunks(<<"ImpT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing ImpT")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | imports: parse_functions(table)})
   end
 
   def parse_chunks(<<"ExpT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing ExpT")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | exports: parse_functions(table)})
   end
 
   def parse_chunks(<<"LocT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing LocT")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | locals: parse_functions(table)})
   end
 
   def parse_chunks(<<"FunT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing FunT")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
-    parse_chunks(rest!, %{s | lambdas: parse_functions(table)})
+    parse_chunks(rest!, %{s | lambdas: parse_lambdas(table)})
   end
 
   def parse_chunks(<<"LitT", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing LitT")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | literals: parse_literals(table)})
   end
 
   def parse_chunks(<<"Attr", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Attr")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | attribs: parse_attribs(table)})
   end
 
   def parse_chunks(<<"CInf", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Cinf")
     aligned = align(size)
     <<table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, %{s | cinfo: parse_info(table)})
   end
 
   def parse_chunks(<<"Dbgi", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Dbgi")
     # not used for our purposes
     aligned = align(size)
     <<_table::binary-size(aligned), rest!::binary>> = rest!
@@ -116,18 +129,21 @@ defmodule Disasm do
   end
 
   def parse_chunks(<<"Docs", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Docs")
     aligned = align(size)
     <<_table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, s)
   end
 
   def parse_chunks(<<"ExCk", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing ExCk")
     aligned = align(size)
     <<_table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, s)
   end
 
   def parse_chunks(<<"Line", size::integer-size(32), rest!::binary>>, s) do
+    Logger.debug("parsing Line")
     aligned = align(size)
     <<_table::binary-size(aligned), rest!::binary>> = rest!
     parse_chunks(rest!, s)
@@ -136,7 +152,7 @@ defmodule Disasm do
   def parse_chunks(<<>>, module), do: module
 
   defp align(size) when rem(size, 4) == 0, do: size
-  defp align(size), do: size + rem(size, 4)
+  defp align(size), do: size + 4 - rem(size, 4)
 
   #############################################################################
   ## ATOM TABLE PARSING
@@ -173,7 +189,7 @@ defmodule Disasm do
   ## FUNCTION TABLE PARSING
 
   @doc """
-  parses the Functions table (import, export, local, lambdas)
+  parses the Functions table (import, export, local)
 
   These tables are lists of triples:
   - `ExpT`: exported functions
@@ -213,6 +229,29 @@ defmodule Disasm do
     |> Enum.map_reduce(exports, fn
       _, <<f::integer-size(32), a::integer-size(32), l::integer-size(32), rest::binary>> ->
         {%Function{i0: f, i1: a, i2: l}, rest}
+    end)
+    |> elem(0)
+  end
+
+  #############################################################################
+  ## LAMBDA TABLE PARSING
+
+  defmodule Lambda do
+    defstruct ~w(fun arity label offset nfree ouniq)a
+  end
+
+
+  @doc """
+  parses the Functions table (import, export, local, lambdas)
+  """
+
+  def parse_lambdas(<<count::integer-size(32), exports::binary>>) do
+    1..count
+    |> Enum.map_reduce(exports, fn
+      _, <<f::integer-size(32), a::integer-size(32), offset::integer-size(32),
+           l::integer-size(32), nfree::integer-size(32), ouniq::integer-size(32),
+           rest::binary>> ->
+        {%Lambda{fun: f, arity: a, label: l, offset: offset, nfree: nfree, ouniq: ouniq}, rest}
     end)
     |> elem(0)
   end
