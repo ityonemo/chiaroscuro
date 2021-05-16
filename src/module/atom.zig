@@ -28,7 +28,7 @@ pub const AtomTable = struct {
         }
 
         fn destroy(allocator: *mem.Allocator, atom_ptr: *?[]u8) void {
-            if (atom_ptr.*) | safe_atom_ptr | {
+            if (atom_ptr.*) |safe_atom_ptr| {
                 allocator.free(safe_atom_ptr);
             }
         }
@@ -48,11 +48,13 @@ pub const AtomTable = struct {
         // first 4-byte segment is the "total chunk length"
         var chunk_length: usize = Module.little_bytes_to_usize(source[4..8]);
         // pad the chunk_length if necessary.
-        if ((chunk_length & 0x3) != 0) { chunk_length += 4 - (chunk_length & 0x3); }
+        if ((chunk_length & 0x3) != 0) {
+            chunk_length += 4 - (chunk_length & 0x3);
+        }
 
         // verify that this our source is long enough and is aligned well
         if (chunk_length > source.len) return ModuleError.TOO_SHORT;
-        defer source_ptr.* = source[8 + chunk_length..];
+        defer source_ptr.* = source[8 + chunk_length ..];
 
         // next 4-byte segment is the "total number of atoms"
         var atom_count: usize = Module.little_bytes_to_usize(source[8..12]);
@@ -138,7 +140,7 @@ test "atom parser can be attached to a for loop for more than one atom" {
 
 // FAILURE PATHS
 test "zero is an inappopriate length for an atom" {
-    const incomplete_atom = [_]u8{ 0 };
+    const incomplete_atom = [_]u8{0};
     var dest: ?[]u8 = undefined;
     var source = incomplete_atom[runtime_zero..];
 

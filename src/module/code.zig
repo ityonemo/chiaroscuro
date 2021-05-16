@@ -37,7 +37,7 @@ pub const CodeTable = struct {
         debug.print("\n max_opcode: {}\n", .{max_opcode});
         debug.print("\n labels: {}\n", .{labels});
         debug.print("\n functions: {}\n", .{functions});
-        
+
         var code_start = 12 + subheader_length;
 
         var code_len = chunk_length - subheader_length;
@@ -45,15 +45,17 @@ pub const CodeTable = struct {
         if (slice.len < code_start + code_len) return ModuleError.TOO_SHORT;
 
         var code_seg = try allocator.alloc(u8, code_len);
-        mem.copy(u8, code_seg, slice[code_start..code_start + code_len]);
+        mem.copy(u8, code_seg, slice[code_start .. code_start + code_len]);
 
         // now, print out every piece of the code segment
-        for (code_seg) | char | {
+        for (code_seg) |char| {
             debug.print("{}\n", .{char});
         }
 
         // advance the cursor to past the chunk.
-        if (chunk_length & 0x03 != 00) { chunk_length += 4 - (chunk_length & 0x03); }
+        if (chunk_length & 0x03 != 00) {
+            chunk_length += 4 - (chunk_length & 0x03);
+        }
         slice_ptr.* = slice[chunk_length..];
 
         return CodeTable{

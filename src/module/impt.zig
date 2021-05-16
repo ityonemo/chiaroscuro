@@ -233,7 +233,7 @@ test "table parser works on more than one impt value" {
 test "incomplete header fails" {
     const table = [_]u8{
         'I', 'm', 'p', 'T',
-        0,   0,   0,  0,
+        0,   0,   0,   0,
     }; // incomplete header
 
     var slice = table[runtime_zero..];

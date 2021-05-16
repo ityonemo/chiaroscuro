@@ -53,7 +53,7 @@ pub const ExptTable = struct {
         if (chunk_length + 8 > source.len) return ModuleError.TOO_SHORT;
         if ((chunk_length & 0x3) != 0) return ModuleError.BAD_ALIGN;
 
-        defer source_ptr.* = source[8 + chunk_length..];
+        defer source_ptr.* = source[8 + chunk_length ..];
 
         // next 4-byte segment is the "total number of exports"
         var expt_count: usize = Module.little_bytes_to_usize(source[8..12]);
@@ -319,8 +319,8 @@ test "module can parse export table" {
     defer Module.destroy(&module);
 
     var exports = module.expttable.?.entries;
-    assert(exports.len == 2);    assert(module.expttable.?.entries[0].?.function == 7);
-
+    assert(exports.len == 2);
+    assert(module.expttable.?.entries[0].?.function == 7);
 
     assert(module.expttable.?.entries[0].?.arity == 7);
     assert(module.expttable.?.entries[0].?.label == 7);
@@ -345,6 +345,6 @@ test "module fails if the export table is too short" {
 
     _ = Module.from_slice(test_allocator, module_slice) catch |err| switch (err) {
         else => unreachable,
-        ModuleError.MISMATCHED_SIZE => return
+        ModuleError.MISMATCHED_SIZE => return,
     };
 }
