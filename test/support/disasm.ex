@@ -137,13 +137,8 @@ defmodule Disasm do
 
   def parse_chunks(<<>>, module), do: module
 
-  defp align(size) do
-    size +
-      case rem(size, 4) do
-        0 -> 0
-        other -> 4 - other
-      end
-  end
+  defp align(size) when rem(size, 4) == 0, do: size
+  defp align(size), do: size + rem(size, 4)
 
   #############################################################################
   ## ATOM TABLE PARSING
