@@ -299,15 +299,6 @@ defmodule Disasm do
   end
 
   #############################################################################
-  ## Strings table
-
-  @doc """
-  parses the strings table
-  """
-  def parse_strings(<<_size::integer-size(32), zipped::binary>>) do
-  end
-
-  #############################################################################
   ## Code Chunk
 
   @doc """
@@ -366,7 +357,7 @@ defmodule Disasm do
   end
 
   defp parse_compact_terms(<<x::5, 0b001::3, rest::binary>>, arity, so_far) do
-    {v, rest} = resegmented(<<x::5>>, rest)
+    {v, rest} = resegmented_integer(<<x::5>>, rest)
     parse_compact_terms(rest, arity - 1, [{:integer, v} | so_far])
   end
 
@@ -415,7 +406,7 @@ defmodule Disasm do
   end
 
   defp parse_compact_terms(<<x::8, _::binary>>, _arity, _so_far) do
-    raise Integer.to_string(x, 2)
+    throw {:error, "unknown compact term: #{Integer.to_string(x, 2)}"}
   end
 
   # special case for a single compact term
@@ -435,6 +426,14 @@ defmodule Disasm do
     <<value::size(bits), rest::binary>> = rest
     {value, rest}
   end
+
+  defp resegmented_integer(<<size::3, 0b11::2>>, rest) do
+    bits = (size + 2) * 8
+    <<value::signed-integer-size(bits), rest::binary>> = rest
+    {value, rest}
+  end
+
+  defp resegmented_integer(other, rest), do: resegmented(other, rest)
 
   #############################################################################
   ## postprocessing.
@@ -496,7 +495,8 @@ defmodule Disasm do
 
   @tests ~w(is_tuple is_nonempty_list is_tagged_tuple is_integer is_lt is_ge is_eq_exact test_arity
     is_pid is_atom is_nil is_binary is_list is_map bs_test_unit bs_test_tail2 bs_start_match2 is_eq
-    is_ne_exact is_function is_ne is_function2 is_boolean is_float is_reference)a
+    is_ne_exact is_function is_ne is_function2 is_boolean is_float is_reference is_number is_bitstr
+    is_port)a
   defp reinterpret(test, module) when elem(test, 0) in @tests do
     [name, jump | args] = Tuple.to_list(test)
     {:test, name, jump, reinterpret(args, module)}
@@ -560,33 +560,78 @@ defmodule Disasm do
     {:gc_bif, name, fail, dealloc, reinterpret([a1, a2], module), dest}
   end
 
+  defp reinterpret({:gc_bif3, fail, dealloc, index, a1, a2, a3, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    {:gc_bif, name, fail, dealloc, reinterpret([a1, a2, a3], module), dest}
+  end
+
   defp reinterpret({:bs_put_string, len, index}, module) do
     str = :binary.part(module.strings, {index, len})
-    {:bs_put_string, len, {:string, String.to_charlist(str)}}
+    {:bs_put_string, len, {:string, :binary.bin_to_list(str)}}
   end
 
   defp reinterpret({:bs_init2, fail, src, a, b, flag, dest}, _module) do
     {:bs_init2, fail, src, a, b, {:field_flags, flag}, dest}
   end
 
-  defp reinterpret({:bs_append, fail, opt, a, b, c, d, flag, dest}, module) do
-    {:bs_append, fail, reinterpret(opt, module), a, b, c, d, {:field_flags, flag}, dest}
+  @bs_field_flags ~w(bs_append bs_put_binary bs_put_float bs_put_utf16 bs_put_integer
+  bs_put_utf32 bs_put_utf8 bs_init_bits bs_private_append)a
+  @bs_field_tests ~w(bs_get_binary2 bs_get_integer2 bs_get_utf8 bs_get_utf16 bs_get_utf32
+  bs_get_float2)a
+
+  defp reinterpret(op, module) when elem(op, 0) in @bs_field_flags do
+    {parts, [flag, dest]} = op
+    |> Tuple.to_list
+    |> Enum.split(-2)
+
+    List.to_tuple(reinterpret(parts ++ [{:field_flags, flag}, dest], module))
   end
 
-  defp reinterpret({:bs_put_binary, fail, opt, index, flag, dest}, module) do
-    {:bs_put_binary, fail, reinterpret(opt, module), index, {:field_flags, flag}, dest}
+  defp reinterpret(op, module) when elem(op, 0) in @bs_field_tests do
+    {[operand, fail | rest], [flag, dest]} = op
+    |> Tuple.to_list
+    |> Enum.split(-2)
+
+    {:test, operand, fail, reinterpret(rest ++ [{:field_flags, flag}, dest], module)}
   end
 
-  defp reinterpret({:bs_get_binary2, fail, src, a, opt, b, flag, dest}, module) do
-    {:test, :bs_get_binary2, fail, [src, a, reinterpret(opt, module), b, {:field_flags, flag}, dest]}
+  defp reinterpret({:bs_skip_bits2, fail, src, a, b, flag}, _module) do
+    {:test, :bs_skip_bits2, fail, [src, a, b, {:field_flags, flag}]}
+  end
+
+  defp reinterpret({:bs_skip_utf8, fail, src, a, flag}, _module) do
+    {:test, :bs_skip_utf8, fail, [src, a, {:field_flags, flag}]}
+  end
+
+  defp reinterpret({:bs_skip_utf16, fail, src, a, flag}, _module) do
+    {:test, :bs_skip_utf16, fail, [src, a, {:field_flags, flag}]}
+  end
+
+  defp reinterpret({:bs_skip_utf32, fail, src, a, flag}, _module) do
+    {:test, :bs_skip_utf32, fail, [src, a, {:field_flags, flag}]}
   end
 
   defp reinterpret({:bs_start_match3, fail, src, len, dst}, _module) do
     {:bs_start_match3, fail, src, {:u, len}, dst}
   end
 
-  defp reinterpret({:raise, a, b}, _) do
-    {:raise, {:f, 0}, [a, b], {:x, 0}}
+  defp reinterpret({:bs_start_match4, fail, a, b, dst}, module) do
+    {:bs_start_match4, reinterpret(fail, module), {:u, a}, b, dst}
+  end
+
+  defp reinterpret({:bs_get_tail, a, b, c}, _module) do
+    {:bs_get_tail, a, b, {:u, c}}
+  end
+
+  defp reinterpret({:bs_get_position, a, b, c}, _module) do
+    {:bs_get_position, a, b, {:u, c}}
+  end
+
+  defp reinterpret({:raise, a, b}, module) do
+    {:raise, {:f, 0}, reinterpret([a, b], module), {:x, 0}}
   end
 
   defp reinterpret(list, module) when is_list(list) do

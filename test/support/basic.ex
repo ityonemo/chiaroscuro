@@ -4,4 +4,6 @@ defmodule Basic do
   defp bar, do: "bar"
 
   def l, do: &bar/0
+
+  def m, do: -1
 end
