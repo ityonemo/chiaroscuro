@@ -1,8 +1,8 @@
 defmodule Disasm do
-  defstruct ~w(attribs cinfo code literals atoms)a ++
+  defstruct ~w(attribs cinfo code literals atoms strings)a ++
               [exports: [], imports: [], locals: [], lambdas: []]
 
-  import Logger
+  require Logger
 
   @doc """
   disassembles a .beam file and outputs the code segment
@@ -21,10 +21,18 @@ defmodule Disasm do
       cinfo = parsed.cinfo
       code = parsed.code
 
-      {:beam_file, Basic, Enum.reverse(exports), attribs, cinfo, code}
+      {:beam_file, List.first(parsed.atoms), Enum.sort_by(exports, &(&1)), attribs, cinfo, code}
     else
       parsed
     end
+  catch
+    {:error, error} ->
+      opts |> IO.inspect(label: "30")
+      if module = opts[:module] do
+        raise "error #{error} disassembling #{inspect module}"
+      else
+        raise "error #{error}"
+      end
   end
 
   @doc """
@@ -67,8 +75,9 @@ defmodule Disasm do
   def parse_chunks(<<"StrT", size::integer-size(32), rest!::binary>>, s) do
     Logger.debug("parsing StrT")
     aligned = align(size)
-    <<_table::binary-size(aligned), rest!::binary>> = rest!
-    parse_chunks(rest!, s)
+    <<strings::binary-size(aligned), rest!::binary>> = rest!
+
+    parse_chunks(rest!, %{s | strings: strings})
   end
 
   def parse_chunks(<<"ImpT", size::integer-size(32), rest!::binary>>, s) do
@@ -229,6 +238,8 @@ defmodule Disasm do
     |> Enum.map_reduce(exports, fn
       _, <<f::integer-size(32), a::integer-size(32), l::integer-size(32), rest::binary>> ->
         {%Function{i0: f, i1: a, i2: l}, rest}
+      _, <<>> ->
+        throw {:error, "incomplete function list"}
     end)
     |> elem(0)
   end
@@ -288,6 +299,15 @@ defmodule Disasm do
   end
 
   #############################################################################
+  ## Strings table
+
+  @doc """
+  parses the strings table
+  """
+  def parse_strings(<<_size::integer-size(32), zipped::binary>>) do
+  end
+
+  #############################################################################
   ## Code Chunk
 
   @doc """
@@ -315,6 +335,7 @@ defmodule Disasm do
   {:type, _, :range, [_, {:integer, _, limit}]} = range
   # assemble a dict of all beam opcodes, by number
   @opcodes Map.new(1..limit, &{&1, :beam_opcodes.opname(&1)})
+  def opcodes, do: @opcodes
 
   @spec parse_opcode(binary, any) :: list
   def parse_opcode(<<>>, so_far), do: Enum.reverse(so_far)
@@ -448,21 +469,124 @@ defmodule Disasm do
     {:literal, Enum.at(module.literals, index)}
   end
 
-  defp reinterpret({:call_only, a, {:f, index}}, module = %{atoms: [m | _]}) do
+  @local_calls ~w(call call_only call_last)a
+
+  defp reinterpret(call, module = %{atoms: [m | _]}) when elem(call, 0) in @local_calls do
+    [local, a, {:f, index} | rest!] = Tuple.to_list(call)
     {f, ^a, ^index} = Enum.find(module.locals ++ module.exports, &(elem(&1, 2) == index))
-    {:call_only, a, {m, f, a}}
+    rest = Enum.map(rest!, &reinterpret(&1, module))
+    List.to_tuple([local, a, {m, f, a} | rest])
   end
 
-  defp reinterpret({:call_ext_only, a, index}, module) do
+  @remote_calls ~w(call_ext call_ext_only call_ext_last)a
+
+  defp reinterpret(call, module) when elem(call, 0) in @remote_calls do
+    [remote, a, index | rest!] = Tuple.to_list(call)
     {m, f, ^a} = Enum.at(module.imports, index)
-    {:call_ext_only, a, {:extfunc, m, f, a}}
+    rest! = Enum.map(rest!, &reinterpret(&1, module))
+    List.to_tuple([remote, a, {:extfunc, m, f, a} | rest!])
   end
 
   defp reinterpret({:make_fun2, index}, module = %{atoms: [m | _]}) do
     lambda = %{fun: fun, arity: a} = Enum.at(module.lambdas, index)
     f = Enum.at(module.atoms, fun - 1)
 
-    {:make_fun2, {m, f, a}, a, lambda.ouniq, lambda.nfree}
+    {:make_fun2, {m, f, a}, index, lambda.ouniq, lambda.nfree}
+  end
+
+  @tests ~w(is_tuple is_nonempty_list is_tagged_tuple is_integer is_lt is_ge is_eq_exact test_arity
+    is_pid is_atom is_nil is_binary is_list is_map bs_test_unit bs_test_tail2 bs_start_match2 is_eq
+    is_ne_exact is_function is_ne is_function2 is_boolean is_float is_reference)a
+  defp reinterpret(test, module) when elem(test, 0) in @tests do
+    [name, jump | args] = Tuple.to_list(test)
+    {:test, name, jump, reinterpret(args, module)}
+  end
+
+  defp reinterpret({:has_map_fields, fail, src, lst}, module) do
+    {:test, :has_map_fields, fail, src, reinterpret(lst, module)}
+  end
+
+  defp reinterpret({:bs_match_string, fail, src, len, pos}, module) do
+    content = :erlang.binary_part(module.strings, {pos, div(len, 8)})
+    {:test, :bs_match_string, fail, [src, len, content]}
+  end
+
+  @builtins ~w(bs_add)a
+  defp reinterpret(builtin, _module) when elem(builtin, 0) in @builtins do
+    [fun, fail | rest] = Tuple.to_list(builtin)
+    {args, [dest]} = Enum.split(rest, -1)
+    {fun, fail, args, dest}
+  end
+
+  defp reinterpret({:bif0, index, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    {:bif, name, :nofail, [], dest}
+  end
+
+  defp reinterpret({:bif1, fail, index, arg, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    a2 = reinterpret(arg, module)
+    {:bif, name, fail, [a2], dest}
+  end
+
+  defp reinterpret({:bif2, fail, index, a, b, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    args = Enum.map([a, b], &reinterpret(&1, module))
+    {:bif, name, fail, args, dest}
+  end
+
+  defp reinterpret({:gc_bif1, fail, dealloc, index, arg, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    {:gc_bif, name, fail, dealloc, reinterpret([arg], module), dest}
+  end
+
+  defp reinterpret({:gc_bif2, fail, dealloc, index, a1, a2, dest}, module) do
+    name = module.imports
+    |> Enum.at(index)
+    |> elem(1)
+
+    {:gc_bif, name, fail, dealloc, reinterpret([a1, a2], module), dest}
+  end
+
+  defp reinterpret({:bs_put_string, len, index}, module) do
+    str = :binary.part(module.strings, {index, len})
+    {:bs_put_string, len, {:string, String.to_charlist(str)}}
+  end
+
+  defp reinterpret({:bs_init2, fail, src, a, b, flag, dest}, _module) do
+    {:bs_init2, fail, src, a, b, {:field_flags, flag}, dest}
+  end
+
+  defp reinterpret({:bs_append, fail, opt, a, b, c, d, flag, dest}, module) do
+    {:bs_append, fail, reinterpret(opt, module), a, b, c, d, {:field_flags, flag}, dest}
+  end
+
+  defp reinterpret({:bs_put_binary, fail, opt, index, flag, dest}, module) do
+    {:bs_put_binary, fail, reinterpret(opt, module), index, {:field_flags, flag}, dest}
+  end
+
+  defp reinterpret({:bs_get_binary2, fail, src, a, opt, b, flag, dest}, module) do
+    {:test, :bs_get_binary2, fail, [src, a, reinterpret(opt, module), b, {:field_flags, flag}, dest]}
+  end
+
+  defp reinterpret({:bs_start_match3, fail, src, len, dst}, _module) do
+    {:bs_start_match3, fail, src, {:u, len}, dst}
+  end
+
+  defp reinterpret({:raise, a, b}, _) do
+    {:raise, {:f, 0}, [a, b], {:x, 0}}
   end
 
   defp reinterpret(list, module) when is_list(list) do
