@@ -8,15 +8,14 @@ defmodule ChiaroscuroTest.DisasmTest do
     assert :beam_disasm.file(b) == Disasm.bin(b)
   end
 
-  @incomplete_functions [Mix.Hex, :raw_file_io_raw, Enumerable, :counters, Mix.Task.Compiler,
+  # all of these have incomplete function lists.
+  @still_buggy [Mix.Hex, :raw_file_io_raw, Enumerable, :counters, Mix.Task.Compiler,
   :dtls_server_session_cache_sup, :dtls_listener_sup, :inets_app, Mix.Dep.ElixirSCM, Hex.Set,
   :beam_opcodes, :erl_tracer, String.Chars.Atom, Supervisor.Default, Agent, Process, :erl_bifs,
   Mix.RemoteConverger, :httpc_handler_sup, :logger_sup, Mix.SCM, :persistent_term, Mix.SCM.Path,
   Mix, List.Chars.BitString, Inspect, String.Chars, :erl_signal_handler, Logger.Filter,
   Logger.Counter, Kernel.ErrorHandler, :dtls_connection_sup, :tls_connection_sup, :elixir_sup,
-  String.Chars.Integer, :otp_internal, Mix.Tasks.Deps.Precompile, :disk_log_sup]
-  @bad_exports [:erl_eval, :epp, :file, :inet_parse, :erl_lint, :logger_handler_watcher, :user]
-  @still_buggy @incomplete_functions ++ @bad_exports
+  String.Chars.Integer, :otp_internal, Mix.Tasks.Deps.Precompile, :disk_log_sup, :logger_handler_watcher]
 
   test "let's dissasemble everything" do
     :code.all_loaded()
@@ -46,10 +45,7 @@ defmodule ChiaroscuroTest.DisasmTest do
     end)
   end
 
-  #{:interfaces, 1, 10}, {nil, 0, 294}, {nil, 1, 296}, {:start, 0, 2}, {:start, 1, 4}, {:start_out, 0, 6}
-  #{:interfaces, 1, 10}, {:module_info, 0, 294}, {:module_info, 1, 296}, {:start, 0, 2}, {:start, 1, 4}, {:start_out, 0, 6}
-
-  #@tag :skip
+  @tag :skip
   test "compare one module" do
     module_bin = :user
     |> :code.get_object_code

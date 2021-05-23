@@ -179,8 +179,8 @@ defmodule Disasm do
   indeed a restriction in the beam VM.
   """
   def parse_atoms(<<count::integer-size(32), atoms::binary>>) do
-    {atoms, leftovers} =
-      Enum.flat_map_reduce(1..count + 1, atoms, fn
+    {atoms, _leftovers} =
+      Enum.flat_map_reduce(1..count, atoms, fn
         _, <<>> ->
           {:halt, nil}
 
@@ -188,7 +188,6 @@ defmodule Disasm do
           {[String.to_atom(atom)], rest}
       end)
 
-    if leftovers, do: raise "leftovers detected: #{inspect leftovers}"
     unless length(atoms) == count, do: raise "count mismatch #{length(atoms)} != #{count}"
 
     atoms
