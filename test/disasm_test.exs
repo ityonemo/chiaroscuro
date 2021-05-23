@@ -14,11 +14,9 @@ defmodule ChiaroscuroTest.DisasmTest do
   Mix.RemoteConverger, :httpc_handler_sup, :logger_sup, Mix.SCM, :persistent_term, Mix.SCM.Path,
   Mix, List.Chars.BitString, Inspect, String.Chars, :erl_signal_handler, Logger.Filter,
   Logger.Counter, Kernel.ErrorHandler, :dtls_connection_sup, :tls_connection_sup, :elixir_sup,
-  String.Chars.Integer, :otp_internal, Mix.Tasks.Deps.Precompile]
+  String.Chars.Integer, :otp_internal, Mix.Tasks.Deps.Precompile, :disk_log_sup]
   @bad_exports [:erl_eval, :epp, :file, :inet_parse, :erl_lint, :logger_handler_watcher, :user]
-  @unk_100111 [:beam_lib, :io_lib_format, :gb_sets, :inet_db, :compile, :rand, Float,
-  ExUnit.CLIFormatter, Kernel, String]
-  @still_buggy @incomplete_functions ++ @bad_exports ++ @unk_100111
+  @still_buggy @incomplete_functions ++ @bad_exports
 
   test "let's dissasemble everything" do
     :code.all_loaded()

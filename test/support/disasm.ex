@@ -399,11 +399,17 @@ defmodule Disasm do
     parse_compact_terms(rest, arity - 1, [{:list, terms} | so_far])
   end
 
+  defp parse_compact_terms(<<0b0100_111, rest!::binary>>, arity, so_far) do
+    # decodes an fp register
+    {reg, rest!} = parse_compact_term(rest!)
+    parse_compact_terms(rest!, arity - 1, [{:fr, reg} | so_far])
+  end
+
   defp parse_compact_terms(<<0b0110_111, rest!::binary>>, arity, so_far) do
     # decodes an allocation list
     {length, rest!} = parse_compact_term(rest!)
     {alloc_list, rest!} = parse_alloc_list(rest!, length, [])
-    parse_compact_terms(rest!, arity - 1, [{:alloc_list, alloc_list} | so_far])
+    parse_compact_terms(rest!, arity - 1, [{:alloc, alloc_list} | so_far])
   end
 
   defp parse_compact_terms(<<0b1000_111, rest::binary>>, arity, so_far) do
@@ -488,7 +494,10 @@ defmodule Disasm do
   end
 
   defp reinterpret({:literal, index}, module) do
-    {:literal, Enum.at(module.literals, index)}
+    case Enum.at(module.literals, index) do
+      float when is_float(float) -> {:float, float}
+      other -> {:literal, other}
+    end
   end
 
   @local_calls ~w(call call_only call_last)a
@@ -532,6 +541,14 @@ defmodule Disasm do
   defp reinterpret({:bs_match_string, fail, src, len, pos}, module) do
     content = :erlang.binary_part(module.strings, {pos, aligned_bytes(len)})
     {:test, :bs_match_string, fail, [src, len, content]}
+  end
+
+  @float_ops ~w(fdiv fmul fsub fadd fnegate)a
+
+  defp reinterpret(op, module) when elem(op, 0) in @float_ops do
+    [operand, fail | rest] = Tuple.to_list(op)
+    {args, [dest]} = Enum.split(rest, -1)
+    {:arithfbif, operand, fail, reinterpret(args, module), dest}
   end
 
   @builtins ~w(bs_add)a
