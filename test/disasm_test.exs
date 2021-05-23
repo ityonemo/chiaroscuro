@@ -17,8 +17,7 @@ defmodule ChiaroscuroTest.DisasmTest do
   String.Chars.Integer, :otp_internal]
   @bad_exports [:erl_eval, :epp, :file, :inet_parse, :erl_lint, :logger_handler_watcher, :user]
   @unknown_compact_term [:beam_lib, ExUnit.CLIFormatter, Kernel, Mix.Tasks.Deps.Precompile, :disk_log,
-  String, :io_lib_format, :inet_db, :compile, :rand, :gb_sets]
-  @etc2 [:net_kernel, Float] # mismatched funs length
+  String, :io_lib_format, :inet_db, :compile, :rand, :gb_sets, Float]
   @still_buggy @incomplete_functions ++ @bad_exports ++ @unknown_compact_term ++ @etc2
 
   test "let's dissasemble everything" do
@@ -47,5 +46,14 @@ defmodule ChiaroscuroTest.DisasmTest do
     |> Enum.map(fn {fun, fun2} ->
       assert fun == fun2
     end)
+  end
+
+  @tag :skip
+  test "compare one module" do
+    module_bin = Float
+    |> :code.get_object_code
+    |> elem(1)
+
+    assert :beam_disasm.file(module_bin) == Disasm.bin(module_bin)
   end
 end

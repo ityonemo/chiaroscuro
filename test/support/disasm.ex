@@ -421,16 +421,23 @@ defmodule Disasm do
     {Bitwise.<<<(x, 8) + y, rest}
   end
 
-  defp resegmented(<<size::3, 0b11::2>>, rest) do
+  defp resegmented(<<size::3, 0b11::2>>, rest!) do
     bits = (size + 2) * 8
-    <<value::size(bits), rest::binary>> = rest
-    {value, rest}
+    <<value::size(bits), rest!::binary>> = rest!
+    {value, rest!}
   end
 
-  defp resegmented_integer(<<size::3, 0b11::2>>, rest) do
+  defp resegmented_integer(<<0b11111::5>>, rest!) do
+    {size, rest!} = parse_compact_term(rest!)
+    integer_bits = (size + 9) * 8
+    <<value::integer-size(integer_bits), rest!::binary>> = rest!
+    {value, rest!}
+  end
+
+  defp resegmented_integer(<<size::3, 0b11::2>>, rest!) do
     bits = (size + 2) * 8
-    <<value::signed-integer-size(bits), rest::binary>> = rest
-    {value, rest}
+    <<value::signed-integer-size(bits), rest!::binary>> = rest!
+    {value, rest!}
   end
 
   defp resegmented_integer(other, rest), do: resegmented(other, rest)
