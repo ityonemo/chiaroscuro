@@ -179,17 +179,17 @@ defmodule Disasm do
   indeed a restriction in the beam VM.
   """
   def parse_atoms(<<count::integer-size(32), atoms::binary>>) do
-    {atoms, _} =
-      Enum.flat_map_reduce(1..count, atoms, fn
+    {atoms, leftovers} =
+      Enum.flat_map_reduce(1..count + 1, atoms, fn
         _, <<>> ->
-          {:halt, nil}
-
-        _, <<0>> <> _ ->
           {:halt, nil}
 
         _, <<size, atom::binary-size(size), rest::binary>> ->
           {[String.to_atom(atom)], rest}
       end)
+
+    if leftovers, do: raise "leftovers detected: #{inspect leftovers}"
+    unless length(atoms) == count, do: raise "count mismatch #{length(atoms)} != #{count}"
 
     atoms
   end
@@ -220,16 +220,24 @@ defmodule Disasm do
   defmodule Function do
     defstruct ~w(i0 i1 i2)a
 
-    def post_process(export, source, :imports) do
-      module = Enum.at(source.atoms, export.i0 - 1)
-      function = Enum.at(source.atoms, export.i1 - 1)
+    def post_process(fdef, source, :imports) do
+      module = Enum.at(source.atoms, fdef.i0 - 1)
+      function = Enum.at(source.atoms, fdef.i1 - 1)
 
-      {module, function, export.i2}
+      {module, function, fdef.i2}
     end
 
-    def post_process(export, source, _) do
-      function = Enum.at(source.atoms, export.i0 - 1)
-      {function, export.i1, export.i2}
+    def post_process(fdef, source, _) do
+      function = Enum.at(source.atoms, fdef.i0 - 1) #, :module_info)
+
+      unless function do
+        length(source.atoms) |> IO.inspect(label: "234")
+        fdef.i0 |> IO.inspect(label: "235")
+        source.atoms |> IO.inspect(label: "234", limit: :infinity)
+        raise "blarg"
+      end
+
+      {function, fdef.i1, fdef.i2}
     end
   end
 

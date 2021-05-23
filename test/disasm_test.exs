@@ -46,9 +46,12 @@ defmodule ChiaroscuroTest.DisasmTest do
     end)
   end
 
-  @tag :skip
+  #{:interfaces, 1, 10}, {nil, 0, 294}, {nil, 1, 296}, {:start, 0, 2}, {:start, 1, 4}, {:start_out, 0, 6}
+  #{:interfaces, 1, 10}, {:module_info, 0, 294}, {:module_info, 1, 296}, {:start, 0, 2}, {:start, 1, 4}, {:start_out, 0, 6}
+
+  #@tag :skip
   test "compare one module" do
-    module_bin = Float
+    module_bin = :user
     |> :code.get_object_code
     |> elem(1)
 
