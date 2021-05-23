@@ -399,6 +399,13 @@ defmodule Disasm do
     parse_compact_terms(rest, arity - 1, [{:list, terms} | so_far])
   end
 
+  defp parse_compact_terms(<<0b0110_111, rest!::binary>>, arity, so_far) do
+    # decodes an allocation list
+    {length, rest!} = parse_compact_term(rest!)
+    {alloc_list, rest!} = parse_alloc_list(rest!, length, [])
+    parse_compact_terms(rest!, arity - 1, [{:alloc_list, alloc_list} | so_far])
+  end
+
   defp parse_compact_terms(<<0b1000_111, rest::binary>>, arity, so_far) do
     # literal lookup
     {term, rest} = parse_compact_term(rest)
@@ -441,6 +448,15 @@ defmodule Disasm do
   end
 
   defp resegmented_integer(other, rest), do: resegmented(other, rest)
+
+  @alloc_list_types %{0 => :words, 1 => :floats, 2 => :funs}
+
+  defp parse_alloc_list(rest, 0, so_far), do: {Enum.reverse(so_far), rest}
+  defp parse_alloc_list(rest!, length, so_far) do
+    {type, rest!} = parse_compact_term(rest!)
+    {value, rest!} = parse_compact_term(rest!)
+    parse_alloc_list(rest!, length - 1, [{@alloc_list_types[type], value} | so_far])
+  end
 
   #############################################################################
   ## postprocessing.

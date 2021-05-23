@@ -16,9 +16,9 @@ defmodule ChiaroscuroTest.DisasmTest do
   Logger.Counter, Kernel.ErrorHandler, :dtls_connection_sup, :tls_connection_sup, :elixir_sup,
   String.Chars.Integer, :otp_internal, Mix.Tasks.Deps.Precompile]
   @bad_exports [:erl_eval, :epp, :file, :inet_parse, :erl_lint, :logger_handler_watcher, :user]
-  @unk_100111 [:beam_lib, :io_lib_format, :gb_sets, :inet_db, :compile, :rand]
-  @unk_110111 [ExUnit.CLIFormatter, Kernel, String, Float]
-  @still_buggy @incomplete_functions ++ @bad_exports ++ @unk_100111 ++ @unk_110111
+  @unk_100111 [:beam_lib, :io_lib_format, :gb_sets, :inet_db, :compile, :rand, Float,
+  ExUnit.CLIFormatter, Kernel, String]
+  @still_buggy @incomplete_functions ++ @bad_exports ++ @unk_100111
 
   test "let's dissasemble everything" do
     :code.all_loaded()
