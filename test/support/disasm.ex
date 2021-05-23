@@ -507,7 +507,7 @@ defmodule Disasm do
   end
 
   defp reinterpret({:bs_match_string, fail, src, len, pos}, module) do
-    content = :erlang.binary_part(module.strings, {pos, div(len, 8)})
+    content = :erlang.binary_part(module.strings, {pos, aligned_bytes(len)})
     {:test, :bs_match_string, fail, [src, len, content]}
   end
 
@@ -646,6 +646,9 @@ defmodule Disasm do
   end
 
   defp reinterpret(any, _), do: any
+
+  defp aligned_bytes(bit_length) when rem(bit_length, 8) == 0, do: div(bit_length, 8)
+  defp aligned_bytes(bit_length), do: div(bit_length, 8) + 1
 
   defp group_by_function(module) do
     all_functions = Enum.sort_by(module.exports ++ module.locals, &elem(&1, 2))

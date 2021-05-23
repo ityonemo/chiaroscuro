@@ -14,13 +14,12 @@ defmodule ChiaroscuroTest.DisasmTest do
   Mix.RemoteConverger, :httpc_handler_sup, :logger_sup, Mix.SCM, :persistent_term, Mix.SCM.Path,
   Mix, List.Chars.BitString, Inspect, String.Chars, :erl_signal_handler, Logger.Filter,
   Logger.Counter, Kernel.ErrorHandler, :dtls_connection_sup, :tls_connection_sup, :elixir_sup,
-  String.Chars.Integer]
+  String.Chars.Integer, :otp_internal]
   @bad_exports [:erl_eval, :epp, :file, :inet_parse, :erl_lint, :logger_handler_watcher, :user]
   @unknown_compact_term [:beam_lib, ExUnit.CLIFormatter, Kernel, Mix.Tasks.Deps.Precompile, :disk_log,
   String, :io_lib_format, :inet_db, :compile, :rand, :gb_sets]
-  @etc [:file_io_server, :unicode, Disasm, :re] # non byte-boundary matching
   @etc2 [:net_kernel, Float] # mismatched funs length
-  @still_buggy @incomplete_functions ++ @bad_exports ++ @unknown_compact_term ++ @etc ++ @etc2
+  @still_buggy @incomplete_functions ++ @bad_exports ++ @unknown_compact_term ++ @etc2
 
   test "let's dissasemble everything" do
     :code.all_loaded()
